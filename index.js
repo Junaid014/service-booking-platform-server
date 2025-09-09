@@ -32,6 +32,42 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
+     const database = client.db("serviceDB");
+    const serviceCollection = database.collection("services");
+
+    // get services
+    app.get("/services", async (req, res) => {
+      try {
+        const result = await serviceCollection.find().toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch services", error });
+      }
+    });
+
+    //  get services by id 
+    app.get("/services/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await serviceCollection.findOne(query);
+        if (!result) {
+          return res.status(404).send({ message: "services not found" });
+        }
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch services", error });
+      }
+    });
+    
+    // post services
+     app.post("/services", async (req, res) => {
+      const service = req.body;
+      service.status = "pending"; // default status
+      const result = await serviceCollection.insertOne(service);
+      res.send(result);
+    });
+
 //     await client.db("admin").command({ ping: 1 });
 //     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
