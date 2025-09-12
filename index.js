@@ -53,10 +53,10 @@ async function run() {
     // app.get("/services", async (req, res) => {
     //   try {
     //     const category = req.query.category;
-    //     let query = { status: "approved" }; // ডিফল্টভাবে approved status চেক করবে
+    //     let query = { status: "approved" }; 
 
     //     if (category) {
-    //       query.category = category; // category থাকলে query তে যোগ করবে
+    //       query.category = category; 
     //     }
 
     //     const result = await serviceCollection.find(query).toArray();
@@ -89,6 +89,36 @@ async function run() {
       const result = await serviceCollection.insertOne(service);
       res.send(result);
     });
+
+
+app.patch("/services/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { action } = req.body; 
+
+    let newStatus;
+    if (action === "approve") newStatus = "approved";
+    else if (action === "reject") newStatus = "rejected";
+    else {
+      return res.status(400).send({ message: "Invalid action" });
+    }
+
+    const filter = { _id: new ObjectId(id) };
+    const updateDoc = {
+      $set: { status: newStatus },
+    };
+
+    const result = await serviceCollection.updateOne(filter, updateDoc);
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "Service not found" });
+    }
+
+    res.send({ message: `Service ${newStatus} successfully`, result });
+  } catch (error) {
+    res.status(500).send({ message: "Failed to update service status", error });
+  }
+});
 
 
 app.put("/services/:id", async (req, res) => {
