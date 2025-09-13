@@ -39,11 +39,17 @@ async function run() {
     
 app.get("/services/approved", async (req, res) => {
   try {
-    const category = req.query.category;
+    const { title, location } = req.query; 
     let query = { status: "approved" };
 
-    if (category) {
-      query.category = category;
+    
+    if (title) {
+      query.title = { $regex: title, $options: "i" }; 
+    }
+
+  
+    if (location) {
+      query.location = { $regex: location, $options: "i" };
     }
 
     const result = await serviceCollection.find(query).toArray();
@@ -52,6 +58,7 @@ app.get("/services/approved", async (req, res) => {
     res.status(500).send({ message: "Failed to fetch approved services", error });
   }
 });
+
 
 app.get("/services/approved/:id", async (req, res) => {
   try {
@@ -100,7 +107,7 @@ app.get("/services", async (req, res) => {
     // post services
     app.post("/services", async (req, res) => {
       const service = req.body;
-      service.status = "pending"; // default status
+      service.status = "pending"; 
       const result = await serviceCollection.insertOne(service);
       res.send(result);
     });
@@ -109,7 +116,7 @@ app.get("/services", async (req, res) => {
 app.patch("/services/:id", async (req, res) => {
   try {
     const id = req.params.id;
-    const { action } = req.body; // frontend থেকে আসবে approve/reject
+    const { action } = req.body; 
 
     if (!["approve", "reject"].includes(action)) {
       return res.status(400).send({ message: "Invalid action" });
