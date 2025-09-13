@@ -36,35 +36,50 @@ async function run() {
     const serviceCollection = database.collection("services");
 
     // get services (with optional category filter)
-    app.get("/services", async (req, res) => {
-      try {
-        const category = req.query.category;
-        let query = {};
-        if (category) {
-          query = { category };
-        }
-        const result = await serviceCollection.find(query).toArray();
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ message: "Failed to fetch services", error });
-      }
-    });
+    
+app.get("/services/approved", async (req, res) => {
+  try {
+    const category = req.query.category;
+    let query = { status: "approved" };
 
-    // app.get("/services", async (req, res) => {
-    //   try {
-    //     const category = req.query.category;
-    //     let query = { status: "approved" }; 
+    if (category) {
+      query.category = category;
+    }
 
-    //     if (category) {
-    //       query.category = category; 
-    //     }
+    const result = await serviceCollection.find(query).toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch approved services", error });
+  }
+});
 
-    //     const result = await serviceCollection.find(query).toArray();
-    //     res.send(result);
-    //   } catch (error) {
-    //     res.status(500).send({ message: "Failed to fetch services", error });
-    //   }
-    // });
+app.get("/services/approved/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id), status: "approved" };
+
+    const service = await serviceCollection.findOne(query);
+
+    if (!service) {
+      return res.status(404).send({ message: "Approved service not found" });
+    }
+
+    res.send(service);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch approved service", error });
+  }
+});
+    // get all services
+    // will be protected
+app.get("/services", async (req, res) => {
+  try {
+    const result = await serviceCollection.find().toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch services", error });
+  }
+});
+
 
 
     //  get services by id 
@@ -94,31 +109,34 @@ async function run() {
 app.patch("/services/:id", async (req, res) => {
   try {
     const id = req.params.id;
-    const { action } = req.body; 
+    const { action } = req.body; // frontend থেকে আসবে approve/reject
 
-    let newStatus;
-    if (action === "approve") newStatus = "approved";
-    else if (action === "reject") newStatus = "rejected";
-    else {
+    if (!["approve", "reject"].includes(action)) {
       return res.status(400).send({ message: "Invalid action" });
     }
 
-    const filter = { _id: new ObjectId(id) };
-    const updateDoc = {
-      $set: { status: newStatus },
+    const updatedDoc = {
+      $set: {
+        status: action === "approve" ? "approved" : "rejected",
+      },
     };
 
-    const result = await serviceCollection.updateOne(filter, updateDoc);
+    const result = await serviceCollection.updateOne(
+      { _id: new ObjectId(id) },
+      updatedDoc
+    );
 
-    if (result.matchedCount === 0) {
-      return res.status(404).send({ message: "Service not found" });
+    if (result.modifiedCount === 0) {
+      return res.status(404).send({ message: "Service not found or not updated" });
     }
 
-    res.send({ message: `Service ${newStatus} successfully`, result });
+    res.send({ message: "Service status updated successfully" });
   } catch (error) {
-    res.status(500).send({ message: "Failed to update service status", error });
+    console.error("Error updating service:", error);
+    res.status(500).send({ message: "Internal server error" });
   }
 });
+
 
 
 app.put("/services/:id", async (req, res) => {
