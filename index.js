@@ -2,7 +2,14 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
+
+const fs = require('fs');
+const path = require('path');
+
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+
+const sqlite3 = require('sqlite3').verbose();
+
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -35,21 +42,87 @@ async function run() {
     const database = client.db("serviceDB");
     const serviceCollection = database.collection("services");
 
+    const usersCollection = database.collection("users");
+
+
+
+
+ //  SQLite setup 
+const dbDir = path.join(__dirname, 'db');
+if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+
+const authDbPath = path.join(dbDir, 'auth.db');
+const authDb = new sqlite3.Database(authDbPath, (err) => {
+  if (err) {
+    console.error("Failed to open SQLite DB:", err);
+  } else {
+    console.log("SQLite auth DB opened at", authDbPath);
+  }
+});
+
+
+authDb.run(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'customer'
+  )
+`, (err) => {
+  if (err) console.error("Create table error:", err.message);
+  else console.log("SQLite users table ready with role column");
+});
+
+
+authDb.run(`
+  ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'customer';
+`, (err) => {
+  if (err) {
+  
+    if (!err.message.includes("duplicate column name")) {
+      console.error("Alter table error:", err.message);
+    }
+  } else {
+    console.log("role column added to existing users table");
+  }
+});
+
+
+app.locals.authDb = authDb;
+app.locals.usersCollection = usersCollection;
+app.locals.serviceCollection = serviceCollection;
+
+
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
+
+
+
+
+
+
+
+
     // get services (with optional category filter)
     
 app.get("/services/approved", async (req, res) => {
   try {
-    const { title, location } = req.query; 
+    const { title, location, category } = req.query;
     let query = { status: "approved" };
 
-    
+
     if (title) {
-      query.title = { $regex: title, $options: "i" }; 
+      query.title = { $regex: title, $options: "i" };
     }
 
-  
+    
     if (location) {
       query.location = { $regex: location, $options: "i" };
+    }
+
+    
+    if (category) {
+      query.category = category;
     }
 
     const result = await serviceCollection.find(query).toArray();
@@ -58,6 +131,7 @@ app.get("/services/approved", async (req, res) => {
     res.status(500).send({ message: "Failed to fetch approved services", error });
   }
 });
+
 
 
 app.get("/services/approved/:id", async (req, res) => {
