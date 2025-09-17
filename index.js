@@ -109,21 +109,21 @@ app.get("/users", async (req, res) => {
 });
 
 
-// Recently logged-in users (last 3)
-app.get("/users/recent", async (req, res) => {
-  try {
-    const users = await usersCollection
-      .find({ last_log_in: { $exists: true } }) 
-      .sort({ last_log_in: -1 }) 
-      .limit(3)
-      .toArray();
-
-    res.json(users);
-  } catch (err) {
-    console.error("Failed to fetch recent users:", err);
-    res.status(500).json({ error: "Failed to fetch recent users" });
-  }
+// recently logged-in users
+app.get('/users/recent', async (req, res) => {
+       try {
+              const users = await usersCollection
+                     .find({})
+                     .sort({ last_log_in: -1 })
+                     .limit(3)
+                     .toArray();
+              res.json(users);
+       } catch (err) {
+              console.error(err);
+              res.status(500).json({ error: 'Failed to fetch users' });
+       }
 });
+
 
 // Search users by email
 app.get("/users/search", async (req, res) => {
