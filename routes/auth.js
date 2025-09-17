@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 
 //  REGISTER 
 router.post('/register', (req, res) => {
-  const { username, password, email, phone } = req.body;
+  const { username, password, email, phone,role } = req.body;
 
   
   if (!username || !password || !email || !phone) {
@@ -50,7 +50,7 @@ router.post('/register', (req, res) => {
             username,   
             email,
             phone,
-            role: "customer",
+            role: role || "customer",
             createdAt: new Date()
           };
 

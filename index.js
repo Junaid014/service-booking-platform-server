@@ -98,10 +98,78 @@ app.use('/api/auth', authRoutes);
 
 
 
+app.get("/users", async (req, res) => {
+  try {
+    const users = await usersCollection.find({}).toArray();
+    res.json(users);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
 
 
+// Recently logged-in users (last 3)
+app.get("/users/recent", async (req, res) => {
+  try {
+    const users = await usersCollection
+      .find({ last_log_in: { $exists: true } }) 
+      .sort({ last_log_in: -1 }) 
+      .limit(3)
+      .toArray();
 
+    res.json(users);
+  } catch (err) {
+    console.error("Failed to fetch recent users:", err);
+    res.status(500).json({ error: "Failed to fetch recent users" });
+  }
+});
 
+// Search users by email
+app.get("/users/search", async (req, res) => {
+  const { email } = req.query;
+
+  if (!email) {
+    return res.status(400).json({ message: "Email query is required" });
+  }
+
+  try {
+
+    const regex = new RegExp(`^${email}`, "i");
+
+    const matchedUsers = await usersCollection
+      .find({ email: { $regex: regex } })
+      .limit(10)
+      .toArray();
+
+    res.send(matchedUsers);
+  } catch (err) {
+    console.error("Search failed:", err);
+    res.status(500).json({ error: "Failed to search users" });
+  }
+});
+
+// Update user role (Make/Remove Admin)
+app.patch("/users/admin/:id", async (req, res) => {
+  const id = req.params.id;
+  const { role } = req.body;
+
+  if (!role) {
+    return res.status(400).json({ message: "Role is required" });
+  }
+
+  try {
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { role: role } }
+    );
+
+    res.json(result);
+  } catch (err) {
+    console.error("Role update failed:", err);
+    res.status(500).json({ error: "Failed to update role" });
+  }
+});
 
     // get services (with optional category filter)
     
