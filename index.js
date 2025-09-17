@@ -222,13 +222,14 @@ app.get("/services/approved/:id", async (req, res) => {
     // will be protected
 app.get("/services", async (req, res) => {
   try {
-    const result = await serviceCollection.find().toArray();
+    const { email } = req.query;
+    const query = email ? { userEmail: email } : {};
+    const result = await serviceCollection.find(query).toArray();
     res.send(result);
   } catch (error) {
     res.status(500).send({ message: "Failed to fetch services", error });
   }
 });
-
 
 
     //  get services by id 
