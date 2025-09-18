@@ -7,11 +7,12 @@ const fs = require('fs');
 const path = require('path');
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-
-const sqlite3 = require('sqlite3').verbose();
-
 const dotenv = require('dotenv');
 dotenv.config();
+const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
+const sqlite3 = require('sqlite3').verbose();
+
+
 
 
 const port = process.env.PORT || 3000;
@@ -41,7 +42,7 @@ async function run() {
 
     const database = client.db("serviceDB");
     const serviceCollection = database.collection("services");
-
+    const paymentsCollection = database.collection('payments');
     const usersCollection = database.collection("users");
 
 
@@ -91,7 +92,7 @@ authDb.run(`
 app.locals.authDb = authDb;
 app.locals.usersCollection = usersCollection;
 app.locals.serviceCollection = serviceCollection;
-
+app.locals.paymentsCollection = paymentsCollection;
 
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
@@ -333,6 +334,67 @@ app.put("/services/:id", async (req, res) => {
         res.status(500).send({ message: "Failed to delete service", error });
       }
     });
+    
+
+
+
+    app.post('/create-payment-intent', async (req, res) => {
+  const { price } = req.body;
+
+  if (!price || isNaN(price)) {
+    return res.status(400).send({ message: "Invalid price" });
+  }
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(Number(price) * 100), 
+      currency: 'usd',
+      payment_method_types: ['card'],
+    });
+
+    res.send({ clientSecret: paymentIntent.client_secret });
+  } catch (error) {
+    console.error("Stripe Payment Intent Error:", error);
+    res.status(500).send({ message: error.message });
+  }
+});
+
+
+
+
+app.post("/payments", async (req, res) => {
+  try {
+    const payment = req.body;
+    const paymentsCollection = req.app.locals.paymentsCollection;
+    const serviceCollection = req.app.locals.serviceCollection;
+    const usersCollection = req.app.locals.usersCollection;
+
+   
+    const result = await paymentsCollection.insertOne(payment);
+
+   
+    const provider = await usersCollection.findOne({ email: payment.providerEmail });
+    if (provider) {
+      const newEarning = (provider.earning || 0) + Number(payment.price);
+      await usersCollection.updateOne(
+        { email: payment.providerEmail },
+        { $set: { earning: newEarning } }
+      );
+    }
+
+  
+    await serviceCollection.updateOne(
+      { _id: new ObjectId(payment.serviceId) },
+      { $inc: { soldCount: 1 } } 
+    );
+
+    res.send({ success: true, insertedId: result.insertedId });
+  } catch (error) {
+    console.error("Payment save error:", error);
+    res.status(500).send({ message: "Payment save failed", error });
+  }
+});
+
 
 
     //     await client.db("admin").command({ ping: 1 });
