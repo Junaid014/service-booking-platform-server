@@ -361,6 +361,61 @@ app.put("/services/:id", async (req, res) => {
 
 
 
+// provider earnings history
+// will be protected
+app.get("/payments/provider/:email", async (req, res) => {
+  try {
+    const email = req.params.email;
+    const paymentsCollection = req.app.locals.paymentsCollection;
+
+ 
+    const history = await paymentsCollection
+      .find({ providerEmail: email })
+      .sort({ date: -1 })
+      .toArray();
+
+ 
+    const totalEarnings = history.reduce((sum, p) => sum + Number(p.price), 0);
+    const totalSales = history.length;
+    const lastPayment = history[0]?.date || null;
+
+    res.send({
+      summary: {
+        totalEarnings,
+        totalSales,
+        lastPayment,
+      },
+      history,
+    });
+  } catch (error) {
+    console.error("Provider earnings fetch error:", error);
+    res.status(500).send({ message: "Failed to fetch provider earnings" });
+  }
+});
+
+
+
+// get payment history by buyer email
+
+// will be protected
+app.get("/payments/history/:email", async (req, res) => {
+  try {
+    const email = req.params.email;
+    const paymentsCollection = req.app.locals.paymentsCollection;
+
+    const history = await paymentsCollection
+      .find({ buyerEmail: email })
+      .sort({ date: -1 }) 
+      .toArray();
+
+    res.send(history);
+  } catch (error) {
+    console.error("Fetch payment history error:", error);
+    res.status(500).send({ message: "Failed to fetch payment history" });
+  }
+});
+
+
 
 app.post("/payments", async (req, res) => {
   try {
