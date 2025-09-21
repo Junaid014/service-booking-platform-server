@@ -100,7 +100,6 @@ const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
 
 
-
 app.get("/users", async (req, res) => {
   try {
     const users = await usersCollection.find({}).toArray();
@@ -137,6 +136,74 @@ app.get('/users/:email/role', async (req, res) => {
 
   res.send({ role: (user.role || 'customer').toLowerCase() });
 });
+
+
+
+// Search users by email
+app.get("/users/search", async (req, res) => {
+  const { email } = req.query;
+
+  if (!email) {
+    return res.status(400).json({ message: "Email query is required" });
+  }
+
+  try {
+
+    const regex = new RegExp(`^${email}`, "i");
+
+    const matchedUsers = await usersCollection
+      .find({ email: { $regex: regex } })
+      .limit(10)
+      .toArray();
+
+    res.send(matchedUsers);
+  } catch (err) {
+    console.error("Search failed:", err);
+    res.status(500).json({ error: "Failed to search users" });
+  }
+});
+
+// Update user role (Make/Remove Admin)
+app.patch("/users/admin/:id", async (req, res) => {
+  const id = req.params.id;
+  const { role } = req.body;
+
+  if (!role) {
+    return res.status(400).json({ message: "Role is required" });
+  }
+
+  try {
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { role: role } }
+    );
+
+    res.json(result);
+  } catch (err) {
+    console.error("Role update failed:", err);
+    res.status(500).json({ error: "Failed to update role" });
+  }
+});
+
+
+app.patch("/users/:email", async (req, res) => {
+  try {
+    const email = req.params.email;
+    const { image } = req.body;
+
+    const result = await usersCollection.updateOne(
+      { email },
+      { $set: { image } }
+    );
+
+    res.json({ success: true, result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update profile image" });
+  }
+});
+
+
 
 
 
