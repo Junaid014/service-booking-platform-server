@@ -11,7 +11,7 @@ const dotenv = require('dotenv');
 dotenv.config();
 const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
 const sqlite3 = require('sqlite3').verbose();
-
+const verifyToken = require("./verifyToken");
 
 
 
@@ -235,7 +235,7 @@ app.get("/services/approved/:id", async (req, res) => {
 });
     // get all services
     // will be protected
-app.get("/services", async (req, res) => {
+app.get("/services",verifyToken, async (req, res) => {
   try {
     const { email } = req.query;
     const query = email ? { userEmail: email } : {};
