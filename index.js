@@ -44,6 +44,7 @@ async function run() {
     const serviceCollection = database.collection("services");
     const paymentsCollection = database.collection('payments');
     const usersCollection = database.collection("users");
+    const reviewsCollection = database.collection("reviews");
 
 
 
@@ -93,6 +94,7 @@ app.locals.authDb = authDb;
 app.locals.usersCollection = usersCollection;
 app.locals.serviceCollection = serviceCollection;
 app.locals.paymentsCollection = paymentsCollection;
+app.locals.reviewsCollection = reviewsCollection;
 
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
@@ -124,6 +126,18 @@ app.get('/users/recent', async (req, res) => {
               res.status(500).json({ error: 'Failed to fetch users' });
        }
 });
+
+app.get('/users/:email/role', async (req, res) => {
+  const email = req.params.email;
+  const user = await usersCollection.findOne({ email });
+
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
+
+  res.send({ role: (user.role || 'customer').toLowerCase() });
+});
+
 
 
 // Search users by email
@@ -356,6 +370,31 @@ app.put("/services/:id", async (req, res) => {
   } catch (error) {
     console.error("Stripe Payment Intent Error:", error);
     res.status(500).send({ message: error.message });
+  }
+});
+
+
+// POST: Add Review
+app.post("/reviews", async (req, res) => {
+  try {
+    const review = req.body;
+    review.date = new Date();
+
+    const result = await reviewsCollection.insertOne(review);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to add review", error });
+  }
+});
+
+// GET: Fetch reviews for a service
+app.get("/reviews/:serviceId", async (req, res) => {
+  try {
+    const serviceId = req.params.serviceId;
+    const result = await reviewsCollection.find({ serviceId }).toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch reviews", error });
   }
 });
 
