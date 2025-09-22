@@ -100,6 +100,56 @@ const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
 
 
+
+// new 
+// app.get("/admin/stats", async (req, res) => {
+//   try {
+//     const totalUsers = await usersCollection.estimatedDocumentCount();
+//     const totalProviders = await usersCollection.countDocuments({ role: "provider" });
+//     const totalBookings = await paymentsCollection.estimatedDocumentCount();
+
+//     const payments = await paymentsCollection.find().toArray();
+//     const totalEarnings = payments.reduce((sum, p) => sum + Number(p.price || 0), 0);
+
+//     // Provider earnings breakdown
+//     const providerEarnings = await paymentsCollection
+//       .aggregate([
+//         { $group: { _id: "$providerEmail", earnings: { $sum: { $toDouble: "$price" } } } },
+//         {
+//           $lookup: {
+//             from: "users",
+//             localField: "_id",
+//             foreignField: "email",
+//             as: "provider",
+//           },
+//         },
+//         { $unwind: { path: "$provider", preserveNullAndEmptyArrays: true } },
+//         {
+//           $project: {
+//             _id: 1,
+//             email: "$_id",
+//             earnings: 1,
+//             name: "$provider.name",
+//           },
+//         },
+//       ])
+//       .toArray();
+
+//     res.send({
+//       totalUsers,
+//       totalProviders,
+//       totalBookings,
+//       totalEarnings,
+//       providerEarnings,
+//     });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).send({ message: "Failed to load stats" });
+//   }
+// });
+
+
+
 app.get("/users", async (req, res) => {
   try {
     const users = await usersCollection.find({}).toArray();
@@ -125,6 +175,26 @@ app.get('/users/recent', async (req, res) => {
               res.status(500).json({ error: 'Failed to fetch users' });
        }
 });
+
+
+// Get user by email
+app.get("/users/:email", async (req, res) => {
+  try {
+    const email = req.params.email;
+    const user = await usersCollection.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: "Failed to fetch user" });
+  }
+});
+
+
 
 app.get('/users/:email/role', async (req, res) => {
   const email = req.params.email;
@@ -279,6 +349,25 @@ app.get("/services/approved", async (req, res) => {
     res.send(result);
   } catch (error) {
     res.status(500).send({ message: "Failed to fetch approved services", error });
+  }
+});
+
+
+
+
+app.patch("/services/trending/:id", async (req, res) => {
+  const { id } = req.params;
+  const { trending } = req.body;
+
+  try {
+    const updated = await serviceCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { trending } }
+    );
+    res.send({ success: true, updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Internal Server Error" });
   }
 });
 
@@ -504,7 +593,7 @@ app.get("/payments/provider/:email", async (req, res) => {
 // get payment history by buyer email
 
 // will be protected
-app.get("/payments/history/:email", async (req, res) => {
+app.get("/payments/history/:email", verifyToken, async (req, res) => {
   try {
     const email = req.params.email;
     const paymentsCollection = req.app.locals.paymentsCollection;
