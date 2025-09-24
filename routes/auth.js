@@ -131,13 +131,13 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-function generateOtp(length = 6) {
-  let otp = '';
-  for (let i = 0; i < length; i++) {
-    otp += Math.floor(Math.random() * 10);
-  }
-  return otp;
-}
+// function generateOtp(length = 6) {
+//   let otp = '';
+//   for (let i = 0; i < length; i++) {
+//     otp += Math.floor(Math.random() * 10);
+//   }
+//   return otp;
+// }
 
 // Generate JWT token
 function generateToken(user) {

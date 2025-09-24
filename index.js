@@ -2,7 +2,7 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
-const otpRoutes = require('./otp');
+// const otpRoutes = require('./otp');
 
 const fs = require('fs');
 const path = require('path');
@@ -21,7 +21,8 @@ const port = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/api/auth', otpRoutes);
+
+// app.use('/api/auth', otpRoutes);
 
 
 
@@ -130,7 +131,7 @@ app.get("/users", async (req, res) => {
 
 
 // recently logged-in users
-app.get('/users/recent', async (req, res) => {
+app.get('/users/recent',verifyToken, async (req, res) => {
        try {
               const users = await usersCollection
                      .find({})
@@ -142,6 +143,31 @@ app.get('/users/recent', async (req, res) => {
               console.error(err);
               res.status(500).json({ error: 'Failed to fetch users' });
        }
+});
+
+
+// Search users by email
+app.get("/users/search",verifyToken, async (req, res) => {
+  const { email } = req.query;
+
+  if (!email) {
+    return res.status(400).json({ message: "Email query is required" });
+  }
+
+  try {
+
+    const regex = new RegExp(`^${email}`, "i");
+
+    const matchedUsers = await usersCollection
+      .find({ email: { $regex: regex } })
+      .limit(10)
+      .toArray();
+
+    res.send(matchedUsers);
+  } catch (err) {
+    console.error("Search failed:", err);
+    res.status(500).json({ error: "Failed to search users" });
+  }
 });
 
 
@@ -164,6 +190,7 @@ app.get("/users/:email", async (req, res) => {
 
 
 
+
 app.get('/users/:email/role', async (req, res) => {
   const email = req.params.email;
   const user = await usersCollection.findOne({ email });
@@ -177,29 +204,7 @@ app.get('/users/:email/role', async (req, res) => {
 
 
 
-// Search users by email
-app.get("/users/search", async (req, res) => {
-  const { email } = req.query;
 
-  if (!email) {
-    return res.status(400).json({ message: "Email query is required" });
-  }
-
-  try {
-
-    const regex = new RegExp(`^${email}`, "i");
-
-    const matchedUsers = await usersCollection
-      .find({ email: { $regex: regex } })
-      .limit(10)
-      .toArray();
-
-    res.send(matchedUsers);
-  } catch (err) {
-    console.error("Search failed:", err);
-    res.status(500).json({ error: "Failed to search users" });
-  }
-});
 
 // Update user role (Make/Remove Admin)
 app.patch("/users/admin/:id", async (req, res) => {
@@ -245,29 +250,6 @@ app.patch("/users/:email", async (req, res) => {
 
 
 
-// Search users by email
-app.get("/users/search", async (req, res) => {
-  const { email } = req.query;
-
-  if (!email) {
-    return res.status(400).json({ message: "Email query is required" });
-  }
-
-  try {
-
-    const regex = new RegExp(`^${email}`, "i");
-
-    const matchedUsers = await usersCollection
-      .find({ email: { $regex: regex } })
-      .limit(10)
-      .toArray();
-
-    res.send(matchedUsers);
-  } catch (err) {
-    console.error("Search failed:", err);
-    res.status(500).json({ error: "Failed to search users" });
-  }
-});
 
 // Update user role (Make/Remove Admin)
 app.patch("/users/admin/:id", async (req, res) => {
@@ -541,7 +523,7 @@ app.get("/reviews/:serviceId", async (req, res) => {
 
 // provider earnings history
 // will be protected
-app.get("/payments/provider/:email", async (req, res) => {
+app.get("/payments/provider/:email",verifyToken, async (req, res) => {
   try {
     const email = req.params.email;
     const paymentsCollection = req.app.locals.paymentsCollection;
@@ -574,7 +556,7 @@ app.get("/payments/provider/:email", async (req, res) => {
 
 
 // get payment history by buyer email
-app.get("/payments", async (req, res) => {
+app.get("/payments",verifyToken, async (req, res) => {
   try {
     const payments = await req.app.locals.paymentsCollection
       .find()           
