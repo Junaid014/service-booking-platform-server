@@ -2,6 +2,7 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
+const otpRoutes = require('./otp');
 
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +21,7 @@ const port = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-
+app.use('/api/auth', otpRoutes);
 
 
 
@@ -90,6 +91,20 @@ authDb.run(`
 });
 
 
+// ====== OTP Table ======
+authDb.run(`
+  CREATE TABLE IF NOT EXISTS otps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone TEXT NOT NULL,
+    otp TEXT NOT NULL,
+    expiresAt INTEGER NOT NULL
+  )
+`, (err) => {
+  if (err) console.error("Create OTP table error:", err.message);
+  else console.log("SQLite OTP table ready");
+});
+
+
 app.locals.authDb = authDb;
 app.locals.usersCollection = usersCollection;
 app.locals.serviceCollection = serviceCollection;
@@ -100,53 +115,6 @@ const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
 
 
-
-// new 
-// app.get("/admin/stats", async (req, res) => {
-//   try {
-//     const totalUsers = await usersCollection.estimatedDocumentCount();
-//     const totalProviders = await usersCollection.countDocuments({ role: "provider" });
-//     const totalBookings = await paymentsCollection.estimatedDocumentCount();
-
-//     const payments = await paymentsCollection.find().toArray();
-//     const totalEarnings = payments.reduce((sum, p) => sum + Number(p.price || 0), 0);
-
-//     // Provider earnings breakdown
-//     const providerEarnings = await paymentsCollection
-//       .aggregate([
-//         { $group: { _id: "$providerEmail", earnings: { $sum: { $toDouble: "$price" } } } },
-//         {
-//           $lookup: {
-//             from: "users",
-//             localField: "_id",
-//             foreignField: "email",
-//             as: "provider",
-//           },
-//         },
-//         { $unwind: { path: "$provider", preserveNullAndEmptyArrays: true } },
-//         {
-//           $project: {
-//             _id: 1,
-//             email: "$_id",
-//             earnings: 1,
-//             name: "$provider.name",
-//           },
-//         },
-//       ])
-//       .toArray();
-
-//     res.send({
-//       totalUsers,
-//       totalProviders,
-//       totalBookings,
-//       totalEarnings,
-//       providerEarnings,
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).send({ message: "Failed to load stats" });
-//   }
-// });
 
 
 
@@ -353,6 +321,21 @@ app.get("/services/approved", async (req, res) => {
 });
 
 
+// trending services get and patch 
+
+
+//  trending services get
+app.get("/services/trending", async (req, res) => {
+  try {
+    const serviceCollection = req.app.locals.serviceCollection;
+    const result = await serviceCollection
+      .find({ trending: true, status: "approved" })
+      .toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to fetch trending services" });
+  }
+});
 
 
 app.patch("/services/trending/:id", async (req, res) => {
@@ -591,6 +574,19 @@ app.get("/payments/provider/:email", async (req, res) => {
 
 
 // get payment history by buyer email
+app.get("/payments", async (req, res) => {
+  try {
+    const payments = await req.app.locals.paymentsCollection
+      .find()           
+      .sort({ date: -1 }) 
+      .toArray();
+
+    res.send(payments);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to fetch payment history" });
+  }
+});
 
 // will be protected
 app.get("/payments/history/:email", verifyToken, async (req, res) => {

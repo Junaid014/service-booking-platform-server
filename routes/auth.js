@@ -131,6 +131,14 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+function generateOtp(length = 6) {
+  let otp = '';
+  for (let i = 0; i < length; i++) {
+    otp += Math.floor(Math.random() * 10);
+  }
+  return otp;
+}
+
 // Generate JWT token
 function generateToken(user) {
   if (!process.env.JWT_SECRET) {
@@ -138,7 +146,7 @@ function generateToken(user) {
     throw new Error("Server misconfiguration");
   }
 
-  // ensure id is string (could be ObjectId or sqlite id)
+  
   const idStr = user.id ? user.id.toString() : null;
 
   const payload = {
@@ -169,7 +177,7 @@ router.post('/register', (req, res) => {
   const authDb = req.app.locals.authDb;
   const usersCollection = req.app.locals.usersCollection;
 
-  // Check if username/phone already exists in SQLite
+ 
   authDb.get("SELECT * FROM users WHERE username = ?", [phone], async (err, row) => {
     if (err) {
       console.error("SQLite error:", err);
@@ -182,7 +190,7 @@ router.post('/register', (req, res) => {
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Use function callback to access this.lastID for possible rollback
+     
       authDb.run(
         "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
         [phone, hashedPassword, role || "customer"],
@@ -192,7 +200,7 @@ router.post('/register', (req, res) => {
             return res.status(500).json({ message: "Failed to save auth info" });
           }
 
-          // sqlite inserted row id (for rollback if needed)
+          
           const sqliteUserId = this.lastID;
 
           const profileDoc = {
@@ -213,13 +221,13 @@ router.post('/register', (req, res) => {
                 role: profileDoc.role
               };
 
-              // generate token based on savedProfile
+              
               let token;
               try {
                 token = generateToken(savedProfile);
               } catch (tokenErr) {
                 console.error("Token generation error:", tokenErr);
-                // Attempt to rollback Mongo + SQLite? Mongo didn't insert, so just rollback sqlite
+              
                 authDb.run("DELETE FROM users WHERE id = ?", [sqliteUserId], (delErr) => {
                   if (delErr) console.error("Rollback sqlite failed:", delErr);
                 });
@@ -234,10 +242,10 @@ router.post('/register', (req, res) => {
             })
             .catch(mongoErr => {
               console.error("Mongo insert error:", mongoErr);
-              // rollback sqlite user record
+            
               authDb.run("DELETE FROM users WHERE id = ?", [sqliteUserId], (delErr) => {
                 if (delErr) console.error("Failed to rollback sqlite user:", delErr);
-                // inform client
+               
                 return res.status(500).json({
                   message: "Registered in auth but failed to save profile"
                 });
@@ -279,7 +287,7 @@ router.post('/login', (req, res) => {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
-      // Try to get profile from Mongo
+      
       let profile = null;
       try {
         profile = await usersCollection.findOne({ phone });
@@ -287,7 +295,7 @@ router.post('/login', (req, res) => {
         console.error("Mongo find error:", mongoFindErr);
       }
 
-      // Build safe profile to return (do not include password)
+      
       const safeProfile = profile
         ? {
             id: profile._id ? profile._id.toString() : null,
@@ -297,7 +305,7 @@ router.post('/login', (req, res) => {
             role: row.role || profile.role || "customer"
           }
         : {
-            // fallback if mongo profile missing
+           
             id: null,
             username: row.username || phone,
             email: null,
@@ -305,7 +313,7 @@ router.post('/login', (req, res) => {
             role: row.role || "customer"
           };
 
-      // generate token
+     
       let token;
       try {
         token = generateToken(safeProfile);
