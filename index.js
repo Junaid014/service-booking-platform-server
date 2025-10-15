@@ -13,6 +13,7 @@ dotenv.config();
 const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
 const sqlite3 = require('sqlite3').verbose();
 const verifyToken = require("./verifyToken");
+const bodyParser = require('body-parser');
 
 
 
@@ -24,6 +25,13 @@ app.use(express.json());
 
 // app.use('/api/auth', otpRoutes);
 
+app.use((req, res, next) => {
+  if (req.originalUrl === '/webhook/stripe') {
+    bodyParser.raw({ type: 'application/json' })(req, res, next);
+  } else {
+    next();
+  }
+});
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.erlqeyi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -48,7 +56,7 @@ async function run() {
     const usersCollection = database.collection("users");
     const reviewsCollection = database.collection("reviews");
 
-
+    app.locals.db = database;
 
 
  //  SQLite setup 
@@ -119,7 +127,7 @@ app.use('/api/auth', authRoutes);
 
 
 
-app.get("/users", async (req, res) => {
+app.get("/users",verifyToken, async (req, res) => {
   try {
     const users = await usersCollection.find({}).toArray();
     res.json(users);
@@ -622,6 +630,219 @@ app.post("/payments", async (req, res) => {
     res.status(500).send({ message: "Payment save failed", error });
   }
 });
+
+
+
+
+// subscription related api
+
+
+app.post('/subscription/create-checkout-session', verifyToken, async (req, res) => {
+  try {
+    const { planId, name, price, discount } = req.body;
+    const userEmail = req.user?.email || req.body.email;
+
+    const missing = [];
+    if (!planId) missing.push('planId');
+    if (!name) missing.push('name');
+    if (!price && price !== 0) missing.push('price');
+    if (!userEmail) missing.push('userEmail');
+
+    if (missing.length > 0) {
+      return res.status(400).json({ ok: false, message: 'Missing required fields', missing });
+    }
+
+    const unitAmount = Math.round(Number(price) * 100);
+
+    const line_items = [{
+      price_data: {
+        currency: 'usd',
+        product_data: { name: `${name} Subscription` },
+        recurring: { interval: 'month' },
+        unit_amount: unitAmount,
+      },
+      quantity: 1,
+    }];
+
+    const sessionParams = {
+      payment_method_types: ['card'],
+      mode: 'subscription',
+      customer_email: userEmail,
+      line_items,
+      success_url: `${process.env.FRONTEND_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/`,
+      metadata: { planId, planName: name, discount: discount || '' } 
+    };
+
+   
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
+
+   
+    const db = req.app.locals.db;
+    await db.collection('subscriptions').updateOne(
+      { checkout_session_id: session.id },
+      { $set: {
+          checkout_session_id: session.id,
+          userEmail,
+          planId,
+          planName: name,
+          price_cents: unitAmount,
+          discount: discount || null,
+          status: 'pending',
+          createdAt: new Date()
+        } },
+      { upsert: true }
+    );
+
+    return res.json({ ok: true, url: session.url, id: session.id });
+  } catch (err) {
+    console.error('create-checkout-session ERROR:', err);
+    return res.status(500).json({ ok: false, message: err.message || 'Internal error' });
+  }
+});
+
+
+
+
+
+
+app.post(
+  '/webhook/stripe',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    let event;
+
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+    } catch (err) {
+      console.error('⚠️ Webhook signature verification failed.', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    const db = req.app.locals.db;
+
+    try {
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object;
+
+        const stripeSubscriptionId = session.subscription;
+        const stripeCustomer = session.customer;
+        const checkoutSessionId = session.id;
+        const userEmail = session.customer_email || session.metadata?.email;
+        const planId = session.metadata?.planId;
+        const planName = session.metadata?.planName;
+        const discountMeta = session.metadata?.discount || null; 
+
+        
+        await db.collection('subscriptions').updateOne(
+          { checkout_session_id: checkoutSessionId },
+          {
+            $set: {
+              stripe_subscription_id: stripeSubscriptionId,
+              stripe_customer_id: stripeCustomer,
+              status: 'active',
+              start_date: new Date(),
+              updatedAt: new Date(),
+              expiresAt: new Date(new Date().setMonth(new Date().getMonth() + 1)),
+              raw_session: session
+            }
+          },
+          { upsert: true }
+        );
+
+        const subscriptionObj = {
+          plan: planName || planId,
+          planId: planId || null,
+          discount: discountMeta,    
+          stripe_subscription_id: stripeSubscriptionId,
+          startDate: new Date(),
+          status: 'active'
+        };
+
+        await db.collection('users').updateOne(
+          { email: userEmail },
+          { $set: { subscription: subscriptionObj, role: 'customer' } },
+          { upsert: false }
+        );
+
+        console.log(`Subscription activated for ${userEmail} -> ${planName || planId}`);
+      }
+
+      res.json({ received: true });
+    } catch (err) {
+      console.error('Webhook handling error:', err);
+      res.status(500).send();
+    }
+  }
+);
+
+
+
+app.post('/subscription/confirm', verifyToken, async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) return res.status(400).json({ message: 'sessionId required' });
+
+   
+    const db = req.app.locals.db;
+    const sub = await db.collection('subscriptions').findOne({ checkout_session_id: sessionId });
+    if (sub && sub.status === 'active') {
+      return res.json({ success: true, subscription: sub });
+    }
+
+    
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session && session.payment_status === 'paid') {
+    
+      const userEmail = session.customer_email;
+      const planId = session.metadata?.planId;
+      const planName = session.metadata?.planName;
+      const discountMeta = session.metadata?.discount || null;
+
+      const stripeSubscriptionId = session.subscription;
+
+      const subscriptionObj = {
+        plan: planName || planId,
+        planId: planId,
+        discount: discountMeta,
+        stripe_subscription_id: stripeSubscriptionId,
+        startDate: new Date(),
+        status: 'active'
+      };
+
+      await db.collection('subscriptions').updateOne(
+        { checkout_session_id: sessionId },
+        { $set: {
+            stripe_subscription_id: stripeSubscriptionId,
+            stripe_customer_id: session.customer,
+            status: 'active',
+            start_date: new Date(),
+            raw_session: session
+          } },
+        { upsert: true }
+      );
+
+      await db.collection('users').updateOne(
+        { email: userEmail },
+        { $set: { subscription: subscriptionObj, role: 'customer' } }
+      );
+
+      return res.json({ success: true, subscription: subscriptionObj });
+    }
+
+    return res.status(404).json({ message: 'Session not completed yet' });
+  } catch (err) {
+    console.error('confirm subscription error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 
 
 
